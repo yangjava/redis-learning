@@ -1,0 +1,145 @@
+Redis对于Linux是官方支持的,安装和使用没有什么好说的,普通使用按照官方指导，5分钟以内就能搞定。详情请参考:
+
+http://redis.io/download 
+
+
+
+但有时候又想在windows下折腾下Redis,可以从redis下载页面看到如下提示(在页面中搜索 "windows")：
+
+[plain] view plain copy
+Win64   Unofficial  The Redis project does not directly support Windows,   
+    however the Microsoft Open Tech group develops and maintains   
+    an Windows port targeting Win64.  
+大意就是 Redis官方是不支持windows的，只是 Microsoft Open Tech group 在 GitHub上开发了一个Win64的版本,项目地址是：
+
+https://github.com/MSOpenTech/redis
+
+打开以后，可以直接使用浏览器下载，或者git克隆。
+
+可以在项目主页右边找到 zip包下载地址: https://github.com/MSOpenTech/redis/archive/2.8.zip
+
+(注意: dist文件改变了下载地址: https://github.com/MSOpenTech/redis/releases )
+
+
+
+在 Release 页面中，可以找到 msi 安装文件以及 .zip 文件(而且有3.0的beta版，请下拉查找)。
+
+下载解压，没什么好说的，在解压后的bin目录下有以下这些文件：
+
+[plain] view plain copy
+redis-benchmark.exe         #基准测试  
+redis-check-aof.exe         # aof  
+redis-check-dump.exe        # dump  
+redis-cli.exe               # 客户端  
+redis-server.exe            # 服务器  
+redis.windows.conf          # 配置文件  
+当然，还有一个 RedisService.docx 文件，看似是一些启动和安装服务的说明文档,但是照着他的指示来,你就会死的很惨，莫名其妙的死了，不知道原因。
+【换机器重新测试后已查明,如果不是Administrator用户，就会出各种问题，服务安装以后启动不了等等问题，应该可以修改服务的属性-->登录用户等选项来修正.】
+
+【如果你安装的windows没有Administrator账户，请参考这篇文章:
+
+Windows 7 启用超级管理员administrator账户的N种方法 】
+网上参考了一些资料,发觉可以使用,也就没有深究,直接拿来主义:
+
+启动脚本如下:
+
+[plain] view plain copy
+redis-server  redis.windows.conf  
+可以将其保存为文件 startup.bat ; 下次就可以直接启动了。
+但是在cmd之中执行这行命令之后报错：
+
+[plain] view plain copy
+D:\Develop\redis-2.8.12>redis-server.exe redis.windows.conf  
+[7736] 10 Aug 21:39:42.974 #  
+The Windows version of Redis allocates a large memory mapped file for sharing  
+the heap with the forked process used in persistence operations. This file  
+will be created in the current working directory or the directory specified by  
+the 'dir' directive in the .conf file. Windows is reporting that there is  
+insufficient disk space available for this file (Windows error 0x70).  
+  
+You may fix this problem by either reducing the size of the Redis heap with  
+the --maxheap flag, or by starting redis from a working directory with  
+sufficient space available for the Redis heap.  
+  
+Please see the documentation included with the binary distributions for more  
+details on the --maxheap flag.  
+  
+Redis can not continue. Exiting.  
+
+根据提示，是 maxheap 标识有问题,打开配置文件 redis.windows.conf ,搜索 maxheap , 然后直接指定好内容即可.
+[plain] view plain copy
+.......  
+#    
+# maxheap <bytes>  
+maxheap 1024000000  
+.......  
+然后再次启动,OK,成功.
+[plain] view plain copy
+D:\Develop\redis-2.8.12>redis-server  redis.windows.conf  
+                _._  
+           _.-``__ ''-._  
+      _.-``    `.  `_.  ''-._           Redis 2.8.12 (00000000/0) 64 bit  
+  .-`` .-```.  ```\/    _.,_ ''-._  
+ (    '      ,       .-`  | `,    )     Running in stand alone mode  
+ |`-._`-...-` __...-.``-._|'` _.-'|     Port: 6379  
+ |    `-._   `._    /     _.-'    |     PID: 6736  
+  `-._    `-._  `-./  _.-'    _.-'  
+ |`-._`-._    `-.__.-'    _.-'_.-'|  
+ |    `-._`-._        _.-'_.-'    |           http://redis.io  
+  `-._    `-._`-.__.-'_.-'    _.-'  
+ |`-._`-._    `-.__.-'    _.-'_.-'|  
+ |    `-._`-._        _.-'_.-'    |  
+  `-._    `-._`-.__.-'_.-'    _.-'  
+      `-._    `-.__.-'    _.-'  
+          `-._        _.-'  
+              `-.__.-'  
+  
+[6736] 10 Aug 22:01:22.247 # Server started, Redis version 2.8.12  
+[6736] 10 Aug 22:01:22.248 * The server is now ready to accept connections on port 6379  
+
+然后可以使用自带的客户端工具进行测试。
+双击打开 redis-cli.exe , 如果不报错,则连接上了本地服务器,然后测试，比如 set命令，get命令:
+
+[plain] view plain copy
+127.0.0.1:6379> set tiemao http://blog.csdn.net/renfufei  
+OK  
+127.0.0.1:6379> get tiemao  
+"http://blog.csdn.net/renfufei"  
+127.0.0.1:6379>  
+这应该很好理解，连接上了本机的6379端口。
+如果需要帮助,可以在 cli窗口中输入 help查看,例如:
+
+[plain] view plain copy
+127.0.0.1:6379> help  
+redis-cli 2.8.12  
+Type: "help @<group>" to get a list of commands in <group>  
+      "help <command>" for help on <command>  
+      "help <tab>" to get a list of possible help topics  
+      "quit" to exit  
+127.0.0.1:6379> help @string  
+根据提示，可以输入 help 空格 然后敲tab键，可以像命令提示一样告诉你可以有哪些帮助分组,多敲几个 tab 试试?
+备注说明:
+1. 这个版本是Win64的，所以32位windows就不要折腾了。
+
+2. 我的操作系统是Windows 7 64位旗舰版,运行内存16GB,用户不是Administrator,而是 hasee，所以设置了下 redis-server.exe 和redis-cli.exe 的属性中的兼容性权限(以管理员身份运行),如果你运行出错，可能需要设置一下这里。
+
+3. 什么360啊，UAC啊，防火墙啊，该关的请关闭。。。
+
+4. 如果有其他问题，欢迎留言或者评论, 这只是一个心血来潮时的折腾
+接触了好久Redis但一直没在windows下使用，请轻拍。
+
+附加几个 bat 批处理脚本,请根据需要灵活配置
+
+service-install.bat
+
+[plain] view plain copy
+redis-server.exe --service-install redis.windows.conf --loglevel verbose  
+uninstall-service.bat
+[plain] view plain copy
+redis-server --service-uninstall  
+startup.bat
+[plain] view plain copy
+redis-server.exe redis.windows.conf  
+
+
+更多信息,请参考: Redis本地环境搭建.md
