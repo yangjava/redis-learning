@@ -9,6 +9,7 @@
   <properties>
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
     	<log4j2.version>2.8.2</log4j2.version>
+    	<servlet.version>3.0.1</servlet.version>
 		<spring.version>4.3.3.RELEASE</spring.version>
 		<mybatis-spring.version>1.3.0</mybatis-spring.version>
 		<mybatis.version>3.4.0</mybatis.version>
@@ -34,7 +35,7 @@
      <dependency>  
         <groupId>junit</groupId>  
         <artifactId>junit</artifactId>  
-        <version>4.8.2</version>  
+        <version>4.12</version>  
         <scope>test</scope>  
     </dependency>  
                 <dependency>
@@ -61,7 +62,25 @@
 			<version>${log4j2.version}</version>
 		</dependency>
 		<!-- log4j2 end -->
-
+       		<!-- web begin -->
+		<dependency>
+			<groupId>javax.servlet</groupId>
+			<artifactId>javax.servlet-api</artifactId>
+			<version>${servlet.version}</version>
+			<scope>provided</scope>
+		</dependency>
+		<dependency>
+			<groupId>javax.servlet</groupId>
+			<artifactId>jsp-api</artifactId>
+			<version>2.0</version>
+			<scope>provided</scope>
+		</dependency>
+		<dependency>
+			<groupId>javax.servlet</groupId>
+			<artifactId>jstl</artifactId>
+			<version>1.2</version>
+		</dependency>
+		<!-- web end -->
 		<!-- Spring begin -->
 		<dependency>
 			<groupId>org.springframework</groupId>
@@ -138,5 +157,6 @@
 	<modules>
 		<module>jedis-hellworld</module>
 		<module>spring-redis-learning</module>
+		<module>spring-redisclient</module>
 	</modules>
 </project>
