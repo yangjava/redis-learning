@@ -38,8 +38,8 @@
         <property name="connectionFactory"   ref="connectionFactory" />  
     </bean>         
     
-    <bean id="userDao" class="com.jedis.UserDao"> 
+<!--     <bean id="userDao" class="com.jedis.UserDao"> 
     <property name="redisTemplate" ref="redisTemplate"></property>
-    </bean>
+    </bean> -->
     
 </beans>
