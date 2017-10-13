@@ -1,0 +1,317 @@
+最近公司系统要求做一个防止刷单的安全拦截，初步拟定的规则是单个用户一天只拿下5单，单个ip一天只能下10单，这个时候自然考虑到了用redis来存储
+下单计数，每天当第一个用户下单时，在redis中创建两个map对象，20170314_pz_ip_order_count 用来储存20170314 这天的ip 下单计数，map的key是ip地址，20170314_pz_user_order_count 用来存储20170314这天的用户下单计数 map对象的key是用户id.
+
+
+1.redis依赖包
+
+         <dependency>   
+            <groupId>org.springframework.data</groupId>   
+            <artifactId>spring-data-redis</artifactId>   
+            <version>1.4.0.RELEASE</version>   
+        </dependency>   
+
+        <dependency>   
+            <groupId>redis.clients</groupId>   
+            <artifactId>jedis</artifactId>   
+            <version>2.5.1</version>   
+        </dependency>
+
+ps:用于开始导入的clieant的jar包1.4  版本比较低，所以导致redis连不上，所以redis还是要看服务端的版本，选择对应的client
+
+2.spring配置
+
+ <bean id="poolConfig" class="redis.clients.jedis.JedisPoolConfig">  
+        <property name="maxTotal" value="${redis.maxTotal}" /> 
+        <property name="maxIdle" value="${redis.maxIdle}" /> 
+        <property name="maxWaitMillis" value="${redis.maxWaitMillis}" /> 
+        <property name="testOnBorrow" value="${redis.testOnBorrow}" /> 
+    </bean>   
+
+   <bean id="connectionFactory" 
+        class="org.springframework.data.redis.connection.jedis.JedisConnectionFactory"> 
+        <property name="usePool" value="${redis.usePool}"></property> 
+        <property name="hostName" value="${redis.host}" /> 
+        <property name="port" value="${redis.port}" /> 
+        <property name="password" value="${redis.password}" /> 
+        <property name="timeout" value="${redis.timeout}" /> 
+        <constructor-arg index="0" ref="poolConfig" /> 
+    </bean> 
+
+    <bean id="redisTemplate" class="org.springframework.data.redis.core.StringRedisTemplate">   
+        <property name="connectionFactory"   ref="connectionFactory" />   
+    </bean>
+
+ps:高版本的poolConfig配置属性有所变更，比如之前maxAcive 变为 maxTotal 
+
+3.编码
+
+package com.pz998.rpc.service.impl; 
+
+import org.springframework.beans.factory.annotation.Autowired; 
+import org.springframework.data.redis.core.RedisTemplate; 
+import org.springframework.data.redis.serializer.RedisSerializer; 
+
+public abstract class AbstractBaseRedisService<K, V>{ 
+        @Autowired   
+        protected RedisTemplate<K, V> redisTemplate;   
+
+        /**  
+         * 设置redisTemplate  
+         * @param redisTemplate the redisTemplate to set  
+         */   
+        public void setRedisTemplate(RedisTemplate<K, V> redisTemplate) {   
+            this.redisTemplate = redisTemplate;   
+        }   
+
+        /**  
+         * 获取 RedisSerializer  
+         * <br>------------------------------<br>  
+         */   
+        protected RedisSerializer<String> getRedisSerializer() {   
+            return redisTemplate.getStringSerializer();   
+        }   
+}
+
+
+package com.pz998.rpc.service.impl; 
+
+import java.util.Date; 
+import java.util.concurrent.TimeUnit; 
+
+import org.apache.commons.lang.StringUtils; 
+import org.apache.commons.lang.time.DateFormatUtils; 
+import org.springframework.stereotype.Service; 
+
+import com.pz998.rpc.common.utils.Contents; 
+import com.pz998.rpc.service.RequestCountRpcService; 
+@Service("requestCountRpcService") 
+public class RequestCountRpcServiceImpl extends AbstractBaseRedisService<String, Object> implements RequestCountRpcService{ 
+
+    public void ipCount(String ip, Integer count) { 
+        String curDate = DateFormatUtils.format(new Date(), "yyyyMMdd"); 
+        String key = curDate+Contents.IP_LIMIT_KEY_SUFFIX; 
+        Integer oldCount = get(key,ip); 
+        oldCount = oldCount+count; 
+        add(key, ip,oldCount); 
+    } 
+
+    public void userCount(String userId, Integer count) { 
+        String curDate = DateFormatUtils.format(new Date(), "yyyyMMdd"); 
+        String key = curDate+Contents.USER_LIMIT_KEY_SUFFIX; 
+        Integer oldCount = get(key,userId); 
+        oldCount = oldCount+count; 
+        add(key,userId,oldCount); 
+
+    } 
+
+    public void clear(String key, String hashKey){ 
+        redisTemplate.opsForHash().delete(key, hashKey); 
+    } 
+
+    public void add(String key, String hashKey, Integer count) { 
+        String countStr = count==null?"0":count.toString(); 
+        redisTemplate.opsForHash().put(key,hashKey, countStr); 
+        redisTemplate.expire(key, 24*60*2, TimeUnit.MINUTES); 
+    } 
+
+    public Integer get(String key, String hashKey) { 
+        String val = (String)redisTemplate.opsForHash().get(key, hashKey); 
+        if(StringUtils.isEmpty(val)){ 
+            return 0; 
+        } 
+
+        return Integer.parseInt(val); 
+    } 
+
+}
+
+4.拦截器配置
+
+    <mvc:interceptors> 
+         <mvc:interceptor> 
+            <mvc:mapping path="/**"/>  
+            <bean class="com.pz998.app.service.interceptor.SecurityInterceptor"> 
+                <property name="ipLimitCount" value="10"></property> 
+                <property name="userLimitCount" value="5"></property> 
+                <property name="methodSet"> 
+                    <set> 
+                        <value>submitJjqhOrder</value> 
+                        <value>submitYymyOrder</value> 
+                        <value>submitJypzOrder</value> 
+                        <value>submitGhpzOrder</value> 
+                        <value>submitDqbgOrder</value> 
+                    </set> 
+                </property> 
+            </bean> 
+        </mvc:interceptor> 
+        <!-- 当设置多个拦截器时，先按顺序调用preHandle方法，然后逆序调用每个拦截器的postHandle和afterCompletion方法 -->  
+    </mvc:interceptors>
+
+ps:将具体拦截的业务方法methodSet，ip限制的阀值ipLimitCount，user阀值userLimitCount 作为拦截器的属性进行注入，这样增强了配置灵活性
+
+5.拦截器编写
+
+package com.pz998.app.service.interceptor; 
+
+import java.io.IOException; 
+import java.io.PrintWriter; 
+import java.util.Date; 
+import java.util.Set; 
+
+import javax.servlet.ServletContext; 
+import javax.servlet.http.HttpServletRequest; 
+import javax.servlet.http.HttpServletResponse; 
+
+import org.apache.commons.lang.StringUtils; 
+import org.apache.commons.lang.time.DateFormatUtils; 
+import org.springframework.web.context.WebApplicationContext; 
+import org.springframework.web.context.support.WebApplicationContextUtils; 
+import org.springframework.web.servlet.HandlerInterceptor; 
+import org.springframework.web.servlet.ModelAndView; 
+
+import com.alibaba.fastjson.JSON; 
+import com.pz998.rpc.common.model.vo.ResponseVoRpc; 
+import com.pz998.rpc.common.utils.Contents; 
+import com.pz998.rpc.service.RequestCountRpcService; 
+
+public class SecurityInterceptor implements HandlerInterceptor{ 
+
+    private RequestCountRpcService requestCountRpcService; 
+
+    private Integer ipLimitCount = 10; 
+    private Integer userLimitCount = 5; 
+
+    private Set<String> methodSet; 
+
+    public String getRemoteHost(javax.servlet.http.HttpServletRequest request){ 
+        String ip = request.getHeader("x-forwarded-for"); 
+        if(ip == null || ip.length() == 0 || "unknown".equalsIgnoreCase(ip)){ 
+            ip = request.getHeader("Proxy-Client-IP"); 
+        } 
+        if(ip == null || ip.length() == 0 || "unknown".equalsIgnoreCase(ip)){ 
+            ip = request.getHeader("WL-Proxy-Client-IP"); 
+        } 
+        if(ip == null || ip.length() == 0 || "unknown".equalsIgnoreCase(ip)){ 
+            ip = request.getRemoteAddr(); 
+        } 
+        return ip.equals("0:0:0:0:0:0:0:1")?"127.0.0.1":ip; 
+    } 
+
+    @Override 
+    public boolean preHandle(HttpServletRequest request, HttpServletResponse response, Object handler) 
+            throws Exception { 
+        String customerId = request.getParameter("customerId"); 
+        String mn = request.getParameter("mn"); 
+        if(StringUtils.isEmpty(mn)){ 
+            return true; 
+        }  
+        if(!methodSet.contains(mn)){ 
+            return true;  
+        }  
+        ServletContext servletContext = request.getServletContext();  
+        WebApplicationContext ctx = WebApplicationContextUtils.getWebApplicationContext(servletContext);               
+        requestCountRpcService = (RequestCountRpcService)ctx.getBean("requestCountRpcService" );  
+        String host = getRemoteHost(request); 
+
+        ResponseVoRpc responseVoRpc = new ResponseVoRpc(); 
+        if(isLimitIp(host)){ 
+            PrintWriter out = null; 
+            try { 
+                out = response.getWriter(); 
+                response.setContentType("application/json;charset=UTF-8");   
+                response.setHeader("Cache-Control", "no-cache");   
+
+                responseVoRpc.setCode(ResponseVoRpc.CODE_COMMON_FAILED); 
+                responseVoRpc.setCodeMsg("同一ip下单过多，已被限制"); 
+                out.write(JSON.toJSONString(responseVoRpc)); 
+            } catch (IOException e) { 
+                e.printStackTrace(); 
+            }finally{ 
+                if(out != null) 
+                    out.close(); 
+            } 
+
+            return false; 
+        } 
+
+        if(isLimitUser(customerId)){ 
+            PrintWriter out = null; 
+            try { 
+                out = response.getWriter(); 
+                response.setContentType("application/json;charset=UTF-8");   
+                response.setHeader("Cache-Control", "no-cache");   
+
+                responseVoRpc.setCode(ResponseVoRpc.CODE_COMMON_FAILED); 
+                responseVoRpc.setCodeMsg("同一用户下单过多，已被限制"); 
+                out.write(JSON.toJSONString(responseVoRpc)); 
+            } catch (IOException e) { 
+                e.printStackTrace(); 
+            }finally{ 
+                if(out != null) 
+                    out.close(); 
+            } 
+            return false; 
+        } 
+
+        requestCountRpcService.ipCount(host, 1); 
+        requestCountRpcService.userCount(customerId, 1); 
+        return true; 
+    } 
+
+    private boolean isLimitUser(String urseId) { 
+        String key = DateFormatUtils.format(new Date(), "yyyyMMdd")+Contents.USER_LIMIT_KEY_SUFFIX; 
+        Integer count = requestCountRpcService.get(key, urseId); 
+        if(count>=userLimitCount){ 
+            return true; 
+        } 
+        return false; 
+    } 
+
+    private boolean isLimitIp(String host) { 
+        String key = DateFormatUtils.format(new Date(), "yyyyMMdd")+Contents.IP_LIMIT_KEY_SUFFIX; 
+        Integer count = requestCountRpcService.get(key, host); 
+        if(count>=ipLimitCount){ 
+            return true; 
+        } 
+        return false; 
+    } 
+
+    @Override 
+    public void postHandle(HttpServletRequest request, HttpServletResponse response, Object handler, 
+            ModelAndView modelAndView) throws Exception { 
+        // TODO Auto-generated method stub 
+
+    } 
+
+    @Override 
+    public void afterCompletion(HttpServletRequest request, HttpServletResponse response, Object handler, Exception ex) 
+            throws Exception { 
+        // TODO Auto-generated method stub 
+
+    } 
+
+    public Integer getIpLimitCount() { 
+        return ipLimitCount; 
+    } 
+
+    public void setIpLimitCount(Integer ipLimitCount) { 
+        this.ipLimitCount = ipLimitCount; 
+    } 
+
+    public Integer getUserLimitCount() { 
+        return userLimitCount; 
+    } 
+
+    public void setUserLimitCount(Integer userLimitCount) { 
+        this.userLimitCount = userLimitCount; 
+    } 
+
+    public Set<String> getMethodSet() { 
+        return methodSet; 
+    } 
+
+    public void setMethodSet(Set<String> methodSet) { 
+        this.methodSet = methodSet; 
+    } 
+
+}
