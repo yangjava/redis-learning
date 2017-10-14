@@ -168,5 +168,6 @@
 		<module>spring-redis-learning</module>
 		<module>spring-redisclient</module>
 		<module>redis-counter</module>
+		<module>redis-locker</module>
 	</modules>
 </project>
